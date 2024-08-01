@@ -42,6 +42,35 @@ EOF
 }
 
 # args: file interface port
+function generate_config_v11() {
+cat > "$1" << EOF
+internal: $2 port=$3
+external: $2
+
+method: pam
+
+user.privileged: root
+user.notprivileged: nobody
+
+client pass {
+        from: 0.0.0.0/0 to: 0.0.0.0/0
+        log: error
+}
+
+# deny proxied to loopback
+block {
+    from: 0.0.0.0/0 to: 127.0.0.0/8
+    log: error
+}
+
+pass {
+        from: 0.0.0.0/0 to: 0.0.0.0/0
+        log: error
+}
+EOF
+}
+
+# args: file interface port
 function generate_config_v14() {
 cat > "$1" <<EOF
 # https://www.inet.no/dante/doc/1.4.x/config/ipv6.html
@@ -131,8 +160,30 @@ IFACE=$(ip route get 8.8.8.8 | head -1 | cut -d' ' -f5)
 [ -e /etc/lsb-release ] && source /etc/lsb-release
 [ -e /etc/os-release ] && source /etc/os-release
 
-# Ubuntu 24.04 LTS
-if [ "$ID $VERSION_CODENAME" = "ubuntu noble" ]; then
+# Ubuntu 16.06 Xenial
+if [ "$DISTRIB_ID $DISTRIB_CODENAME" = "Ubuntu xenial" ]; then
+
+	apt update
+	apt install -y dante-server libpam-pwdfile openssl
+
+	generate_password_file /etc/danted.passwd "$USER" "$PASSWORD"
+
+	generate_pam /etc/pam.d/sockd /etc/danted.passwd
+
+	generate_config_v11 /etc/danted.conf "$IFACE" "$PORT"
+
+	open_ufw_port "$PORT"
+
+	systemctl restart danted.service
+
+	echo "Your socks proxy configuration:"
+	echo "Address: $( get_external_address )"
+	echo "Port: $PORT"
+	echo "User: $USER"
+	echo "Password: $PASSWORD"
+
+# Ubuntu 18.04 Bionic
+elif [ "$DISTRIB_ID $DISTRIB_CODENAME" = "Ubuntu bionic" ]; then
 
 	apt update
 	apt install -y dante-server libpam-pwdfile openssl
@@ -153,12 +204,71 @@ if [ "$ID $VERSION_CODENAME" = "ubuntu noble" ]; then
 	echo "User: $USER"
 	echo "Password: $PASSWORD"
 
+# Ubuntu 20.04 Focal
+elif [ "$ID $VERSION_CODENAME" = "ubuntu noble" ]; then
+
+	apt update
+	apt install -y dante-server libpam-pwdfile openssl
+
+	generate_password_file /etc/danted.passwd "$USER" "$PASSWORD"
+
+	generate_pam /etc/pam.d/sockd /etc/danted.passwd
+
+	generate_config_v14 /etc/danted.conf "$IFACE" "$PORT"
+
+	open_ufw_port "$PORT"
+
+	systemctl restart danted.service
+
+	echo "Your socks proxy configuration:"
+	echo "Address: $( get_external_address )"
+	echo "Port: $PORT"
+	echo "User: $USER"
+	echo "Password: $PASSWORD"
+
+# CentOS 7 and Oracle Linux 7.5
+elif [ "$ID $VERSION_ID" = "ol 7.5" -o "$ID $VERSION_ID" = "centos 7" ]; then
+
+	DANTE_TGZ="tgz-prod.dante-1.4.2-rhel72-amd64-64bit-gcc.tar.gz"
+	curl --progress-bar -O https://www.inet.no/dante/sslfiles/dante-1.4.2/"$DANTE_TGZ"
+	tar -C / -xzf "$DANTE_TGZ"
+
+	yum install -q -y openssl which bind-utils
+
+	generate_password_file /etc/danted.passwd "$USER" "$PASSWORD"
+
+	generate_password_dbfile /etc/danted.passwd
+
+	generate_pam_userdb /etc/pam.d/sockd /etc/danted.passwd
+
+	generate_config_v14 /etc/sockd.conf "$IFACE" "$PORT"
+
+	open_firewalld_port "$PORT"
+
+	generate_systemd_file /etc/systemd/system/sockd.service
+
+	systemctl daemon-reload
+
+	systemctl enable sockd.service
+
+	systemctl restart sockd.service
+
+	echo "Your socks proxy configuration:"
+	echo "Address: $( get_external_address )"
+	echo "Port: $PORT"
+	echo "User: $USER"
+	echo "Password: $PASSWORD"
+
 else
 
 	echo "Sorry, this distribution is not supported"
 	echo "Feel free to send patches to selivan.github.io/socks to add support for more"
 	echo "Supported distributions:"
-	echo "- Ubuntu 24.04 LTS"
+	echo "- Ubuntu 16.04 Xenial"
+	echo "- Ubuntu 18.04 Bionic"
+	echo "- Ubuntu 20.04 Focal"
+	echo "- Oracle Linux 7.5"
+	echo "- Centos 7"
 	exit 1
 
 fi
