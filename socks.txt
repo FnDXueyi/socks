@@ -3,13 +3,13 @@
 # Author: Pavel Selivanov
 # Contributors: Vlad Safronov (Oracle Linux 7.5, Centos 7)
 
-function get_external_address {
-    local addr=$(timeout 3 dig +short myip.opendns.com @resolver1.opendns.com || \
-    timeout 3 curl -s http://ipecho.net/plain || \
-    timeout 3 curl -s http://ident.me/ || \
-    timeout 3 curl -s http://whatismyip.akamai.com/)
-    [ $? -ne 0 ] && addr="<this server IP address>"
-    echo "$addr"
+function get_external_address() {
+	local addr=$( timeout 3 dig +short myip.opendns.com @resolver1.opendns.com || \
+	timeout 3 curl -s http://ipecho.net/plain || \
+	timeout 3 curl -s http://ident.me/ || \
+	timeout 3 curl -s http://whatismyip.akamai.com/ )
+	[ $? -ne 0 ] && addr="<this server IP address>"
+	echo "$addr"
 }
 
 # args: file user password
